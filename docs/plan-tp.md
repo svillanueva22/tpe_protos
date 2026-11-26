@@ -19,6 +19,13 @@ Ante cualquier duda mandan el enunciado y `AGENTS.md`.
 - **Entrega 1:** requerimientos 1–8, informe, RFC del protocolo de management. Fecha: `____`
 - **Entrega 2:** sniffer POP3 (req. 9) y correcciones de la entrega 1. Fecha: `____`
 
+> **El sniffer POP3 NO entra en la Entrega 1.** El enunciado marca el req. 9 como
+> "[SOLO PARA SEGUNDA ENTREGA]" (`docs/20262-r0.txt`, sección 1). En la Entrega 1 nadie
+> implementa ni cablea el sniffer: las Partes A y B lo ignoran. Solo quedó un **stub** con la
+> API definitiva (`src/socks5/pop3_sniffer.{h,c}`, de C) para que en la Entrega 2 alcance con
+> implementar la lógica y sumar dos llamadas en `COPY`. Todo lo marcado **[Entrega 2]** más
+> abajo queda para esa entrega.
+
 ---
 
 ## 1. Contratos comunes (se acuerdan juntos, ~1 h, antes de dividirse)
@@ -31,11 +38,11 @@ esperar a nadie. Cambiar una firma = avisar al grupo antes.
 |--------|-------|---------|------------|
 | `src/socks5/socks5nio.h` | A | B, `main.c` | `enum socks_v5state` completo, `struct socks5` (union de estados), `socksv5_passive_accept`, `socksv5_pool_destroy` |
 | `src/socks5/request.h` | A | B, C | `struct request { cmd, atyp, dest (v4/v6/fqdn), dest_port }` y `enum socks_reply` (tabla `AGENTS.md` §5.3) |
-| `src/server/users.h` | C | A, D | `users_check`, `users_add`, `users_del`, `users_set_pass`, `users_list` |
-| `src/server/metrics.h` | C | A, B, D | `metrics_conn_open/close`, `metrics_bytes`, `metrics_rep`, `metrics_auth_fail`, `metrics_get` |
-| `src/server/accesslog.h` | C | B, D | `accesslog_write(user, client_addr, request, rep)` |
+| `src/server/users.h` | C | A, D | `users_check(user, ulen, pass, plen)` (con longitudes, sin `'\0'`), `users_add`, `users_del`, `users_set_pass`, `users_count` + `users_name_at(i)` para listar |
+| `src/server/metrics.h` | C | A, B, D | `metrics_conn_open/close`, `metrics_bytes(dir, n)`, `metrics_rep`, `metrics_auth_ok/fail`, `metrics_get` |
+| `src/server/accesslog.h` | C | B, D | `accesslog_write(user, client, atyp, dest, dest_port, dest_ip, rep)`: `dest` es lo pedido (texto) y `dest_ip` la IP a la que conectó B (o `NULL`). `main` hace el flush. Ver `docs/decisiones-parte-c.md` (D1, D2) |
 | `src/server/config.h` | C | todos | `config_get`, `config_set_*` (buffer size, timeouts, sniffer on/off, log level) |
-| `src/socks5/pop3_sniffer.h` | C | B | `pop3_sniffer_init`, `pop3_sniffer_feed(sniffer, ptr, n, dir)` |
+| `src/socks5/pop3_sniffer.h` | C | B | **[Entrega 2]** stub con la API definitiva: `pop3_sniffer_applies`, `pop3_sniffer_init`, `pop3_sniffer_feed(sniffer, ptr, n, dir)`. No se usa en la Entrega 1 |
 | `src/mgmt/mgmt.h` | D | `main.c` | `mgmt_passive_accept`, `mgmt_pool_destroy` |
 
 `src/server/main.c` y `src/server/args.c` son de **C**. Hoy `listen_on` registra el mismo
@@ -104,8 +111,9 @@ al request, credenciales erróneas se rechazan y los tests de parsers pasan.
    errno → `REP` (`ENETUNREACH` 0x03, `EHOSTUNREACH` 0x04, `ECONNREFUSED` 0x05, `ETIMEDOUT` 0x06).
 3. `COPY`: un buffer por sentido, intereses según espacio libre/datos pendientes,
    half-close con `shutdown(SHUT_WR)`, cierre cuando ambos lados terminaron.
-4. Ganchos: `metrics_bytes` en cada transferencia, `accesslog_write` al conocer el resultado
-   del connect, `pop3_sniffer_feed` en `COPY` si el destino es el puerto 110.
+4. Ganchos: `metrics_bytes` en cada transferencia y `accesslog_write` al conocer el resultado
+   del connect (con la IP a la que se conectó, ver D2). **[Entrega 2]** `pop3_sniffer_feed`
+   en `COPY` si el destino es el puerto 110: no se hace en la Entrega 1.
 5. Timeout de connect e inactividad, con valor tomado de `config`.
 6. **Stress:** scripts en `test/stress/` para máximo de conexiones simultáneas y throughput
    vs. cantidad de clientes; compilado sin ASan; tablas/gráficos y límite real de `FD_SETSIZE`.
@@ -138,10 +146,11 @@ muerta, `REP 0x05`) y el servidor sostiene 500 clientes simultáneos.
 8. Mantener el `Makefile` y escribir el `README.md` final.
 9. **Ensamblar el informe** (11 secciones en el orden del enunciado) con lo que escribe cada uno.
 
-**Prueba aislada:** tests unitarios de cada módulo; sniffer alimentado de a 1 byte.
-**Informe:** logs y sniffer, guía de instalación, instrucciones de configuración, índice y conclusiones.
-**Listo cuando:** tests en verde, `grep example.com access.log` responde quién y cuándo,
-y el sniffer captura credenciales de una sesión POP3 real.
+**Prueba aislada:** tests unitarios de cada módulo; **[Entrega 2]** sniffer alimentado de a 1 byte.
+**Informe:** logs, guía de instalación, instrucciones de configuración, índice y conclusiones;
+**[Entrega 2]** sniffer.
+**Listo cuando:** tests en verde y `grep example.com access.log` responde quién y cuándo;
+**[Entrega 2]** el sniffer captura credenciales de una sesión POP3 real.
 
 ### Parte D — Protocolo de management y cliente
 
@@ -153,7 +162,7 @@ y el sniffer captura credenciales de una sesión POP3 real.
 3. Servidor en el mismo selector: accept no bloqueante, parser incremental, respuestas con
    escrituras parciales.
 4. Comandos: métricas, usuarios (alta/baja/listado/cambio de contraseña), configuración en
-   runtime, consulta del access log y credenciales capturadas.
+   runtime y consulta del access log. **[Entrega 2]** consulta de las credenciales capturadas.
 5. `mgmt-client`: ya tiene `-h`, `-v`, `-L`, `-P` y conecta (`src-client/args.c`,
    `src-client/main.c`, en el `TODO Fase 3`). Falta la opción de credenciales del admin,
    un subcomando por operación, salida legible y códigos de salida claros.
