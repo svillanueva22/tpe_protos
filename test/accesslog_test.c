@@ -11,13 +11,28 @@
 #define LOG_PATH "build/accesslog_test.log"
 
 static struct sockaddr_in
-client_v4(void) {
+addr_v4(const char *ip, const unsigned short port) {
     struct sockaddr_in a;
     memset(&a, 0, sizeof(a));
     a.sin_family = AF_INET;
-    a.sin_port = htons(51234);
-    inet_pton(AF_INET, "192.0.2.7", &a.sin_addr);
+    a.sin_port = htons(port);
+    inet_pton(AF_INET, ip, &a.sin_addr);
     return a;
+}
+
+static struct sockaddr_in6
+addr_v6(const char *ip, const unsigned short port) {
+    struct sockaddr_in6 a;
+    memset(&a, 0, sizeof(a));
+    a.sin6_family = AF_INET6;
+    a.sin6_port = htons(port);
+    inet_pton(AF_INET6, ip, &a.sin6_addr);
+    return a;
+}
+
+static struct sockaddr_in
+client_v4(void) {
+    return addr_v4("192.0.2.7", 51234);
 }
 
 // Lee la línea `n` (desde 0) del archivo de log; devuelve false si no existe.
@@ -42,7 +57,9 @@ START_TEST (test_line_format) {
     remove(LOG_PATH);
     ck_assert(accesslog_init(LOG_PATH));
     const struct sockaddr_in c = client_v4();
-    accesslog_write("alice", (const struct sockaddr *) &c, ACCESSLOG_FQDN, "example.com", 80, 0x00);
+    const struct sockaddr_in origin = addr_v4("93.184.216.34", 80);
+    accesslog_write("alice", (const struct sockaddr *) &c, ACCESSLOG_FQDN, "example.com", 80,
+                    (const struct sockaddr *) &origin, 0x00);
     accesslog_close();
 
     char line[512];
@@ -55,6 +72,9 @@ START_TEST (test_line_format) {
     ck_assert_ptr_ne(strstr(line, " client=192.0.2.7:51234 "), NULL);
     ck_assert_ptr_ne(strstr(line, " atyp=fqdn "), NULL);
     ck_assert_ptr_ne(strstr(line, " dest=example.com:80 "), NULL);
+    // el nombre que pidió el cliente y la IP a la que realmente se conectó: se puede
+    // hacer grep por cualquiera de los dos
+    ck_assert_ptr_ne(strstr(line, " ip=93.184.216.34 "), NULL);
     ck_assert_ptr_ne(strstr(line, " rep=0x00\n"), NULL);
 }
 END_TEST
@@ -62,12 +82,16 @@ END_TEST
 START_TEST (test_one_line_per_request_and_append) {
     remove(LOG_PATH);
     const struct sockaddr_in c = client_v4();
+    const struct sockaddr_in o4 = addr_v4("198.51.100.1", 443);
+    const struct sockaddr_in6 o6 = addr_v6("2001:db8::1", 22);
     ck_assert(accesslog_init(LOG_PATH));
-    accesslog_write("alice", (const struct sockaddr *) &c, ACCESSLOG_IPV4, "198.51.100.1", 443, 0x05);
+    accesslog_write("alice", (const struct sockaddr *) &c, ACCESSLOG_IPV4, "198.51.100.1", 443,
+                    (const struct sockaddr *) &o4, 0x05);
     accesslog_close();
     // reabrir agrega al final, no pisa
     ck_assert(accesslog_init(LOG_PATH));
-    accesslog_write("bob", (const struct sockaddr *) &c, ACCESSLOG_IPV6, "2001:db8::1", 22, 0x04);
+    accesslog_write("bob", (const struct sockaddr *) &c, ACCESSLOG_IPV6, "2001:db8::1", 22,
+                    (const struct sockaddr *) &o6, 0x04);
     accesslog_close();
 
     char line[512];
@@ -84,13 +108,11 @@ END_TEST
 
 START_TEST (test_ipv6_in_brackets) {
     remove(LOG_PATH);
-    struct sockaddr_in6 c6;
-    memset(&c6, 0, sizeof(c6));
-    c6.sin6_family = AF_INET6;
-    c6.sin6_port = htons(5000);
-    inet_pton(AF_INET6, "::1", &c6.sin6_addr);
+    const struct sockaddr_in6 c6 = addr_v6("::1", 5000);
+    const struct sockaddr_in6 o6 = addr_v6("2001:db8::1", 22);
     ck_assert(accesslog_init(LOG_PATH));
-    accesslog_write("alice", (const struct sockaddr *) &c6, ACCESSLOG_IPV6, "2001:db8::1", 22, 0x00);
+    accesslog_write("alice", (const struct sockaddr *) &c6, ACCESSLOG_IPV6, "2001:db8::1", 22,
+                    (const struct sockaddr *) &o6, 0x00);
     accesslog_close();
 
     char line[512];
@@ -98,6 +120,25 @@ START_TEST (test_ipv6_in_brackets) {
     // sin corchetes "::1:5000" no se sabría dónde termina la IP y empieza el puerto
     ck_assert_ptr_ne(strstr(line, " client=[::1]:5000 "), NULL);
     ck_assert_ptr_ne(strstr(line, " dest=[2001:db8::1]:22 "), NULL);
+    // ip= no lleva puerto, así que va sin corchetes
+    ck_assert_ptr_ne(strstr(line, " ip=2001:db8::1 "), NULL);
+}
+END_TEST
+
+START_TEST (test_no_ip_when_name_did_not_resolve) {
+    remove(LOG_PATH);
+    const struct sockaddr_in c = client_v4();
+    ck_assert(accesslog_init(LOG_PATH));
+    // REP 0x04 por getaddrinfo sin resultados: no hubo ninguna IP
+    accesslog_write("alice", (const struct sockaddr *) &c, ACCESSLOG_FQDN, "no-existe.example", 80,
+                    NULL, 0x04);
+    accesslog_close();
+
+    char line[512];
+    ck_assert(read_line(0, line, sizeof(line)));
+    ck_assert_ptr_ne(strstr(line, " dest=no-existe.example:80 "), NULL);
+    ck_assert_ptr_ne(strstr(line, " ip=- "), NULL);
+    ck_assert_ptr_ne(strstr(line, " rep=0x04\n"), NULL);
 }
 END_TEST
 
@@ -105,7 +146,7 @@ START_TEST (test_flush_writes_the_buffer) {
     remove(LOG_PATH);
     const struct sockaddr_in c = client_v4();
     ck_assert(accesslog_init(LOG_PATH));
-    accesslog_write("alice", (const struct sockaddr *) &c, ACCESSLOG_FQDN, "a.com", 1, 0x00);
+    accesslog_write("alice", (const struct sockaddr *) &c, ACCESSLOG_FQDN, "a.com", 1, NULL, 0x00);
     accesslog_flush();  // lo que hace main una vez por vuelta del selector
 
     // el proceso sigue vivo y el archivo sigue abierto: la línea ya tiene que estar en disco
@@ -125,9 +166,9 @@ START_TEST (test_anonymous_and_sanitized) {
     remove(LOG_PATH);
     const struct sockaddr_in c = client_v4();
     ck_assert(accesslog_init(LOG_PATH));
-    accesslog_write(NULL, (const struct sockaddr *) &c, ACCESSLOG_FQDN, "a.com", 1, 0x01);
+    accesslog_write(NULL, (const struct sockaddr *) &c, ACCESSLOG_FQDN, "a.com", 1, NULL, 0x01);
     // un usuario con espacio o salto de línea no puede partir la línea ni inyectar otra
-    accesslog_write("mal user\nrep=0x00", (const struct sockaddr *) &c, ACCESSLOG_FQDN, "b.com", 1, 0x01);
+    accesslog_write("mal user\nrep=0x00", (const struct sockaddr *) &c, ACCESSLOG_FQDN, "b.com", 1, NULL, 0x01);
     accesslog_close();
 
     char line[512];
@@ -141,7 +182,7 @@ END_TEST
 
 START_TEST (test_write_without_init_is_noop) {
     const struct sockaddr_in c = client_v4();
-    accesslog_write("alice", (const struct sockaddr *) &c, ACCESSLOG_FQDN, "a.com", 1, 0);
+    accesslog_write("alice", (const struct sockaddr *) &c, ACCESSLOG_FQDN, "a.com", 1, NULL, 0);
     accesslog_close();  // cerrar sin abrir tampoco rompe
 }
 END_TEST
@@ -158,6 +199,7 @@ accesslog_suite(void) {
     tcase_add_test(tc, test_line_format);
     tcase_add_test(tc, test_one_line_per_request_and_append);
     tcase_add_test(tc, test_ipv6_in_brackets);
+    tcase_add_test(tc, test_no_ip_when_name_did_not_resolve);
     tcase_add_test(tc, test_flush_writes_the_buffer);
     tcase_add_test(tc, test_flush_without_init_is_noop);
     tcase_add_test(tc, test_anonymous_and_sanitized);

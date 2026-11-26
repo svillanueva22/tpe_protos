@@ -82,6 +82,20 @@ format_hostport(char *dst, const size_t dstlen, const char *host, const bool ipv
     snprintf(dst, dstlen, ipv6 ? "[%s]:%u" : "%s:%u", host, port);
 }
 
+// Solo la IP, sin puerto ni corchetes ("-" si no hay o la familia no es IP).
+static void
+format_ip(char *dst, const size_t dstlen, const struct sockaddr *addr) {
+    if (addr != NULL && addr->sa_family == AF_INET
+        && inet_ntop(AF_INET, &((const struct sockaddr_in *) addr)->sin_addr, dst, (socklen_t) dstlen) != NULL) {
+        return;
+    }
+    if (addr != NULL && addr->sa_family == AF_INET6
+        && inet_ntop(AF_INET6, &((const struct sockaddr_in6 *) addr)->sin6_addr, dst, (socklen_t) dstlen) != NULL) {
+        return;
+    }
+    snprintf(dst, dstlen, "-");
+}
+
 static void
 format_client(char *dst, const size_t dstlen, const struct sockaddr *client) {
     char ip[INET6_ADDRSTRLEN];
@@ -104,7 +118,8 @@ format_client(char *dst, const size_t dstlen, const struct sockaddr *client) {
 void
 accesslog_write(const char *user, const struct sockaddr *client,
                 const enum accesslog_atyp atyp, const char *dest,
-                const uint16_t dest_port, const uint8_t rep) {
+                const uint16_t dest_port, const struct sockaddr *dest_ip,
+                const uint8_t rep) {
     if (out == NULL) {
         return;
     }
@@ -133,8 +148,11 @@ accesslog_write(const char *user, const struct sockaddr *client,
     char dst[DEST_BUF + 8];
     format_hostport(dst, sizeof(dst), host, atyp == ACCESSLOG_IPV6, (unsigned) dest_port);
 
+    char ip[INET6_ADDRSTRLEN];
+    format_ip(ip, sizeof(ip), dest_ip);
+
     // Sin fflush acá: la línea queda en el buffer hasta accesslog_flush() (una vez por
     // vuelta del selector) o hasta que el buffer se llene. Así no hay un write() por request.
-    fprintf(out, "%s user=%s client=%s atyp=%s dest=%s rep=0x%02x\n",
-            when, who, cli, atyp_name(atyp), dst, (unsigned) rep);
+    fprintf(out, "%s user=%s client=%s atyp=%s dest=%s ip=%s rep=0x%02x\n",
+            when, who, cli, atyp_name(atyp), dst, ip, (unsigned) rep);
 }

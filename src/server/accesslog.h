@@ -6,13 +6,19 @@
  *
  * Tiene que poder responder "¿quién se conectó a X y cuándo?" con un grep:
  *
- *   2026-11-26T22:42:31Z user=alice client=10.0.0.5:51234 atyp=fqdn dest=example.com:80 rep=0x00
- *   2026-11-26T22:42:35Z user=bob client=[::1]:5000 atyp=ipv6 dest=[2001:db8::1]:22 rep=0x05
+ *   2026-11-26T22:42:31Z user=alice client=10.0.0.5:51234 atyp=fqdn dest=example.com:80 ip=93.184.216.34 rep=0x00
+ *   2026-11-26T22:42:35Z user=bob client=[::1]:5000 atyp=ipv6 dest=[2001:db8::1]:22 ip=2001:db8::1 rep=0x05
+ *   2026-11-26T22:42:40Z user=bob client=[::1]:5001 atyp=fqdn dest=no-existe.example:80 ip=- rep=0x04
  *
  *   - Fecha ISO-8601 en UTC.
- *   - Formato `clave=valor`, un request por línea. Las IPv6 van entre corchetes.
- *   - user=- si todavía no hubo autenticación. Los espacios y caracteres de control del
- *     usuario y del destino se reemplazan por '_' para no romper el formato.
+ *   - Formato `clave=valor`, un request por línea. En `client=` y `dest=` las IPv6 van entre
+ *     corchetes porque llevan puerto; `ip=` no lleva puerto y va sin corchetes.
+ *   - dest= es lo que pidió el cliente; ip= es la IP a la que realmente se conectó el
+ *     proxy (decisión D2). Sirve cuando una queja externa trae la IP del servidor y no el
+ *     nombre, y deja registrado a qué IP resolvió el DNS en ese momento.
+ *   - user=- si todavía no hubo autenticación; ip=- si no hubo IP (el nombre no resolvió).
+ *     Los espacios y caracteres de control del usuario y del destino se reemplazan por '_'
+ *     para no romper el formato.
  *
  * Se escribe a un archivo y NO usa el logger de debug (que va a stderr).
  *
@@ -68,12 +74,17 @@ void accesslog_close(void);
  * @param dest       destino como texto, SIN corchetes ni puerto: el FQDN pedido o la IP
  *                   literal. Así se loguea lo que pidió el cliente, no a qué IP resolvió.
  * @param dest_port  puerto de destino, en orden de host.
+ * @param dest_ip    IP a la que se conectó el proxy (el puerto de esta estructura se
+ *                   ignora). Si hubo que probar varias, la que funcionó; si fallaron todas,
+ *                   la última que se intentó. NULL si no hubo ninguna (el nombre no
+ *                   resolvió, o el request se rechazó antes de conectar): se loguea ip=-.
  * @param rep        código REP con el que se respondió (0x00 = éxito).
  *
  * Es no-op si el access log no fue inicializado con accesslog_init.
  */
 void accesslog_write(const char *user, const struct sockaddr *client,
                      enum accesslog_atyp atyp, const char *dest,
-                     uint16_t dest_port, uint8_t rep);
+                     uint16_t dest_port, const struct sockaddr *dest_ip,
+                     uint8_t rep);
 
 #endif

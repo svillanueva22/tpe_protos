@@ -52,15 +52,53 @@ que solo escribe el log, sin necesidad de avisarle nada al selector (más simple
 
 ---
 
+## D2 — El access log registra la IP a la que realmente se conectó
+
+**Fecha:** 2026-11-26 · **Estado:** decidida
+
+**Contexto.** El requerimiento 8 pide que el administrador pueda saber quién se conectó a
+cierto sitio y cuándo ante una queja externa. Hasta ahora la línea solo tenía el destino
+pedido por el cliente (por ejemplo `example.com`).
+
+**Problema.** La queja la hace el dueño del sitio, que ve en su log la IP del proxy y la
+hora, no el nombre que usó el cliente. Si trae la IP del servidor, un `grep` por IP no
+encuentra nada. Además un nombre puede resolver a IPs distintas según el momento o el
+balanceo, y después el administrador ya no puede reconstruirlo consultando el DNS.
+
+**Decisión.** Cada línea lleva `ip=<IP>` además de `dest=<lo pedido>:<puerto>`:
+
+```
+2026-11-26T22:42:31Z user=alice client=10.0.0.5:51234 atyp=fqdn dest=example.com:80 ip=93.184.216.34 rep=0x00
+```
+
+- Si hubo que probar varias IPs (requerimiento 4), se loguea la que funcionó; si fallaron
+  todas, la última que se intentó.
+- Si no hubo ninguna (`getaddrinfo` sin resultados, request rechazado antes de conectar):
+  `ip=-`.
+- `accesslog_write` recibe un `struct sockaddr *dest_ip` (puede ser `NULL`), no un string:
+  el formato (incluida la IPv6) lo resuelve el módulo y la Parte B no formatea nada. El
+  puerto de esa estructura se ignora; el puerto ya está en `dest=`.
+
+**Limitación (va al informe).** Una IP no identifica un sitio: con CDNs o hosting
+compartido muchos sitios comparten IP. Por eso se guardan juntos el nombre, la IP y la hora.
+
+**Quién lo completa.** La Parte B, que es quien conoce la IP a la que conectó. Ver el
+comentario de `accesslog_write` en `src/server/accesslog.h`.
+
+---
+
 ## Pendientes de decidir (Parte C)
 
 Se van charlando de a una; al decidir cada una se pasa a una entrada propia arriba.
 
-- **Qué más registra el access log** para el caso de la queja externa: IP resuelta del
-  destino (la completa la Parte B), intentos de auth fallidos como línea propia, línea de
-  cierre con bytes y duración.
-- **Firma de `accesslog_write`**: hoy recibe primitivos (usuario, cliente, tipo de
-  dirección, destino como texto, puerto, REP) para no depender de `request.h` (Parte A).
+- **Intentos de auth fallidos en el access log**: una línea por intento (usuario intentado,
+  IP del cliente, hora), en el mismo archivo y con un campo `event=` para distinguirla. Hoy
+  solo se cuentan. Nunca se loguearía la contraseña.
+- **Línea de cierre con bytes y duración**: descartada por ahora (no la pide el
+  requerimiento 8 y obliga a la Parte B a llevar contadores por conexión). Si se quiere
+  consumo por usuario, es más limpio como métrica por usuario.
+- **Firma de `accesslog_write`**: recibe primitivos (usuario, cliente, tipo de dirección,
+  destino como texto, puerto, IP destino, REP) para no depender de `request.h` (Parte A).
   La alternativa del plan es recibir el `struct request`.
 - **Consulta del access log desde management** (Parte D): solo informar la ruta del archivo
   o guardar las últimas N líneas en memoria y devolverlas por el protocolo.
