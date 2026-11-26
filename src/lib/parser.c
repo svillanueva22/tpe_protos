@@ -1,3 +1,8 @@
+/**
+ * parser.c - pequeño motor para parsers/lexers
+ *
+ * Basado en código de Juan F. Codagnone — Protocolos de Comunicación, ITBA
+ */
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>

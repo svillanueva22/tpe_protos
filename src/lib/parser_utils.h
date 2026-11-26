@@ -1,3 +1,4 @@
+/** Basado en código de Juan F. Codagnone — Protocolos de Comunicación, ITBA */
 #ifndef PARSER_UTILS_H_c2f29bb6482d34fc6f94a09046bbd65a5f668acf
 #define PARSER_UTILS_H_c2f29bb6482d34fc6f94a09046bbd65a5f668acf
 

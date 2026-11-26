@@ -1,3 +1,4 @@
+/** Basado en código de Juan F. Codagnone — Protocolos de Comunicación, ITBA */
 #ifndef STM_H_wL7YxN65ZHqKGvCPrNbPtMJgL8B
 #define STM_H_wL7YxN65ZHqKGvCPrNbPtMJgL8B
 

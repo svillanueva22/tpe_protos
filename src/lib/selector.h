@@ -1,3 +1,4 @@
+/** Basado en código de Juan F. Codagnone — Protocolos de Comunicación, ITBA */
 #ifndef SELECTOR_H_W50GNLODsARolpHbsDsrvYvMsbT
 #define SELECTOR_H_W50GNLODsARolpHbsDsrvYvMsbT
 

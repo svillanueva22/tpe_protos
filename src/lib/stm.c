@@ -1,6 +1,8 @@
 /**
  * stm.c - pequeño motor de maquina de estados donde los eventos son los
  *         del selector.c
+ *
+ * Basado en código de Juan F. Codagnone — Protocolos de Comunicación, ITBA
  */
 #include <stdlib.h>
 #include "stm.h"
