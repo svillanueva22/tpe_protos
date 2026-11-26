@@ -175,10 +175,5 @@ main(const int argc, char **argv)
     send_line(sock, "QUIT");
     read_line(sock, line, sizeof(line)); /* drena el OK del QUIT */
     close(sock);
-<<<<<<< HEAD
     return rc;
 }
-=======
-    return 0;
-}
->>>>>>> main
