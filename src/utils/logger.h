@@ -20,10 +20,15 @@ void setLogLevel(LOG_LEVEL newLevel);
 
 char * levelDescription(LOG_LEVEL level);
 
-// Debe ser una macro para poder obtener nombre y linea de archivo. 
-#define log(level, fmt, ...)   {if(level >= current_level) {\
+// Debe ser una macro para poder obtener nombre y linea de archivo.
+// FIX: renombrada de `log` a `LOG`: `log` choca con `log()` de <math.h> en
+// cualquier archivo que incluya ambos headers (acuerdo de la Parte 4, fase 0).
+// FIX: `fmt` pasó a formar parte de `__VA_ARGS__` (ya no hay parámetro `fmt`
+// aparte) para no depender de `##__VA_ARGS__`, que es una extensión GNU y
+// clang la marca con -pedantic en macOS (-Wgnu-zero-variadic-macro-arguments).
+#define LOG(level, ...)   {if(level >= current_level) {\
 	fprintf (stderr, "%s %s %s: %s:%d, ",__DATE__, __TIME__, levelDescription(level), __FILE__, __LINE__); \
-	fprintf(stderr, fmt, ##__VA_ARGS__); \
+	fprintf(stderr, __VA_ARGS__); \
 	fprintf(stderr,"\n"); }\
 	if ( level==FATAL) exit(1);}
 #endif
