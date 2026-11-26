@@ -22,11 +22,17 @@ LIB_SRCS = \
     src/lib/stm.c
 
 SERVER_SRCS = \
-    src/server/main.c \
-    src/server/args.c
+    src/server/main.c      \
+    src/server/args.c      \
+    src/server/users.c     \
+    src/server/metrics.c   \
+    src/server/accesslog.c
 
-# TODO Fase 1: agregar src/socks5/socks5nio.c cuando existan hello.h y request.h.
-SOCKS5_SRCS =
+SOCKS5_SRCS = \
+    src/socks5/socks5nio.c \
+    src/socks5/hello.c     \
+    src/socks5/auth.c      \
+    src/socks5/request.c
 
 UTILS_SRCS = \
     src/utils/logger.c \
@@ -96,7 +102,8 @@ endif
 TEST_CC = $(CC) $(CFLAGS) $(CHECK_CFLAGS) $(INCLUDES)
 
 TESTS = $(BUILD)/test_buffer $(BUILD)/test_netutils $(BUILD)/test_parser \
-        $(BUILD)/test_parser_utils $(BUILD)/test_selector $(BUILD)/test_stm
+        $(BUILD)/test_parser_utils $(BUILD)/test_selector $(BUILD)/test_stm \
+        $(BUILD)/test_hello $(BUILD)/test_auth $(BUILD)/test_request
 
 # Si un test falla, `make test` termina con error.
 test: $(TESTS)
@@ -125,6 +132,18 @@ $(BUILD)/test_parser_utils: src/lib/parser_utils_test.c src/lib/parser.c src/lib
 	$(TEST_CC) -o $@ $^ $(CHECK_LIBS)
 
 $(BUILD)/test_stm: src/lib/stm_test.c src/lib/selector.c src/lib/stm.c
+	@mkdir -p $(BUILD)
+	$(TEST_CC) -o $@ $^ $(CHECK_LIBS)
+
+$(BUILD)/test_hello: test/hello_test.c src/socks5/hello.c src/lib/buffer.c
+	@mkdir -p $(BUILD)
+	$(TEST_CC) -o $@ $^ $(CHECK_LIBS)
+
+$(BUILD)/test_auth: test/auth_test.c src/socks5/auth.c src/lib/buffer.c
+	@mkdir -p $(BUILD)
+	$(TEST_CC) -o $@ $^ $(CHECK_LIBS)
+
+$(BUILD)/test_request: test/request_test.c src/socks5/request.c src/lib/buffer.c
 	@mkdir -p $(BUILD)
 	$(TEST_CC) -o $@ $^ $(CHECK_LIBS)
 
