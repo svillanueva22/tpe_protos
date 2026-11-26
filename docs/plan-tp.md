@@ -10,8 +10,12 @@ Ante cualquier duda mandan el enunciado y `AGENTS.md`.
 
 ## 0. Prerrequisitos e hitos
 
-- **Fase 0 cerrada** (checklist de `docs/fase0-reparto.md`): `make`, `make test` y
-  `socks5d` escuchando. Nadie arranca su parte sin eso mergeado en `main`.
+- **Fase 0 cerrada** (checklist de `docs/fase0-reparto.md`). Al 26/11 (`ac27cb7`) están
+  mergeadas las 4 partes y `socks5d`/`mgmt-client` compilan, pero falta:
+  - `src/utils/logger.h`, `src-client/args.h` y `src-client/main.c` no terminan en
+    newline → clang tira `-Wnewline-eof` (el checklist pide cero warnings).
+  - Correr `make test` en Linux y en una Mac con Check instalado
+    (`brew install check pkg-config`) y confirmar los 6 tests en verde.
 - **Entrega 1:** requerimientos 1–8, informe, RFC del protocolo de management. Fecha: `____`
 - **Entrega 2:** sniffer POP3 (req. 9) y correcciones de la entrega 1. Fecha: `____`
 
@@ -32,6 +36,18 @@ esperar a nadie. Cambiar una firma = avisar al grupo antes.
 | `src/server/accesslog.h` | C | B, D | `accesslog_write(user, client_addr, request, rep)` |
 | `src/server/config.h` | C | todos | `config_get`, `config_set_*` (buffer size, timeouts, sniffer on/off, log level) |
 | `src/socks5/pop3_sniffer.h` | C | B | `pop3_sniffer_init`, `pop3_sniffer_feed(sniffer, ptr, n, dir)` |
+| `src/mgmt/mgmt.h` | D | `main.c` | `mgmt_passive_accept`, `mgmt_pool_destroy` |
+
+`src/server/main.c` y `src/server/args.c` son de **C**. Hoy `listen_on` registra el mismo
+`passive_accept` provisorio para SOCKS y management; C lo cambia para que reciba el handler,
+y registra `socksv5_passive_accept` (A) y `mgmt_passive_accept` (D). A y D no editan `main.c`.
+
+Credenciales del administrador de management: D define cómo se autentica; C agrega la
+opción de línea de comandos al servidor (las opciones exactas las publica la cátedra en otro
+documento; si sale, se adapta) y D la del cliente.
+
+Tests nuevos: cada parte los pone en `test/<modulo>_test.c` con Check, igual que los de
+`src/lib/`. C agrega al `Makefile` una regla genérica para `test/*_test.c` en la primera semana.
 
 Estados de la conexión SOCKS (A define el enum, cada uno implementa los suyos):
 
@@ -56,8 +72,8 @@ cada PR lo revisa otro integrante.
 **Archivos:** `src/socks5/socks5nio.{c,h}`, `hello.{c,h}`, `auth.{c,h}`, `request.{c,h}`, `test/`
 
 1. Completar `socks5nio.c` desde el esqueleto: pool con refcount, `socksv5_passive_accept`,
-   tabla `client_statbl`, handlers read/write/block/close. Reemplaza el `passive_accept`
-   provisorio de `src/server/main.c`.
+   tabla `client_statbl`, handlers read/write/block/close. C lo engancha en `main.c` en
+   lugar del `passive_accept` provisorio.
 2. Parser incremental **hello** (usando `src/lib/parser.h` o a mano): acepta `0x02`;
    si no viene, responde `0x05 0xFF` y cierra.
 3. Parser incremental **auth RFC 1929** + respuesta `0x01 0x00` / `0x01 0x01`. Valida con
@@ -77,6 +93,9 @@ al request, credenciales erróneas se rechazan y los tests de parsers pasan.
 
 **Archivos:** `src/socks5/resolv.{c,h}`, `connecting.{c,h}`, `copy.{c,h}`, `test/stress/`
 
+0. `src/lib/selector.c:585`: `selector_fd_set_nio` lee los flags con `F_GETFD` en vez de
+   `F_GETFL`, así que al poner `O_NONBLOCK` pisa los flags de estado del fd. Corregirlo con
+   `// FIX:` antes de usarlo en el connect.
 1. `REQUEST_RESOLV`: `getaddrinfo` en un thread aparte que termina con
    `selector_notify_block`; el resultado se procesa en `on_block_ready`. IPv4/IPv6 literales
    no pasan por el thread.
@@ -100,18 +119,24 @@ muerta, `REP 0x05`) y el servidor sostiene 500 clientes simultáneos.
 ### Parte C — Estado del servidor, logs y sniffer
 
 **Archivos:** `src/server/users.c`, `metrics.c`, `accesslog.c`, `config.c`,
-`src/socks5/pop3_sniffer.c`, todos los headers de C, `Makefile`, `README.md`, `docs/informe`
+`src/socks5/pop3_sniffer.c`, todos los headers de C, `src/server/main.c`, `src/server/args.c`,
+`Makefile`, `README.md`, `docs/informe`
 
-1. **Día 1:** subir los headers de la sección 1 que le tocan, con stubs.
-2. `users.c`: carga desde `-u`, alta/baja/cambio de contraseña en runtime, límites RFC 1929.
+1. **Día 1:** subir los headers de la sección 1 que le tocan, con stubs, y la regla de
+   `Makefile` para `test/*_test.c`.
+2. `users.c`: carga inicial desde `args.users` (ya validados por `args.c`), alta/baja/cambio
+   de contraseña en runtime, límites RFC 1929.
 3. `metrics.c`: históricas, concurrentes, bytes, fallos por `REP`, auth fallidas.
 4. `config.c`: valores en runtime (buffer size, timeouts, sniffer on/off, nivel de log).
 5. `accesslog.c`: una línea por request (fecha ISO-8601, usuario, cliente, destino, `REP`),
    apta para `grep`, sin bloquear el selector.
 6. **Sniffer POP3 (Entrega 2):** parser incremental de `USER`/`PASS` confirmado por `+OK`,
    sin alterar el flujo, respeta `-N` y el toggle de `config`.
-7. Mantener el `Makefile` y escribir el `README.md` final.
-8. **Ensamblar el informe** (11 secciones en el orden del enunciado) con lo que escribe cada uno.
+7. `main.c`: `listen_on` con handler por parámetro, enganchar `socksv5_passive_accept` y
+   `mgmt_passive_accept`, inicializar users/metrics/config/accesslog y liberarlos al salir.
+   Opción de credenciales del admin en `args.c`.
+8. Mantener el `Makefile` y escribir el `README.md` final.
+9. **Ensamblar el informe** (11 secciones en el orden del enunciado) con lo que escribe cada uno.
 
 **Prueba aislada:** tests unitarios de cada módulo; sniffer alimentado de a 1 byte.
 **Informe:** logs y sniffer, guía de instalación, instrucciones de configuración, índice y conclusiones.
@@ -129,8 +154,9 @@ y el sniffer captura credenciales de una sesión POP3 real.
    escrituras parciales.
 4. Comandos: métricas, usuarios (alta/baja/listado/cambio de contraseña), configuración en
    runtime, consulta del access log y credenciales capturadas.
-5. `mgmt-client`: un subcomando por operación, opciones coherentes con el servidor
-   (`-L`, `-P`, `-h`, `-v`), salida legible y códigos de salida claros.
+5. `mgmt-client`: ya tiene `-h`, `-v`, `-L`, `-P` y conecta (`src-client/args.c`,
+   `src-client/main.c`, en el `TODO Fase 3`). Falta la opción de credenciales del admin,
+   un subcomando por operación, salida legible y códigos de salida claros.
 6. Tests del parser de a 1 byte y un script con ejemplos de configuración y monitoreo.
 
 **Prueba aislada:** contra los stubs de C (métricas fijas, usuarios en memoria).
@@ -146,7 +172,7 @@ usar el proxy sin reiniciar el servidor.
 |-------|------------------|-------|-----------------------|
 | A | máquina de estados + 3 parsers | parsers de a 1 byte | protocolos SOCKS/RFC 1929, diseño de parsers |
 | B | resolución, connect, relay | casos de conexión + stress | arquitectura, stress, limitaciones |
-| C | users, metrics, config, accesslog, sniffer | unitarios + POP3 | logs/sniffer, instalación, configuración, ensamblado |
+| C | users, metrics, config, accesslog, sniffer, `main.c` | unitarios + POP3 | logs/sniffer, instalación, configuración, ensamblado |
 | D | servidor + cliente de management | parser + script de ejemplos | RFC de management, ejemplos de configuración y monitoreo |
 
 "Problemas encontrados" y "posibles extensiones" las escribe cada uno sobre su parte.
