@@ -4,6 +4,10 @@
 struct client_args {
     const char *mng_addr;
     unsigned short mng_port;
+    const char *admin_user;
+    const char *admin_pass;
+    int cmd_argc;     /* cantidad de tokens del subcomando (incluye su nombre) */
+    char **cmd_argv;  /* subcomando + argumentos, ej: {"users", "add", "pepe", "1234"} */
 };
 
 /**
