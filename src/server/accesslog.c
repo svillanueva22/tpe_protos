@@ -1,16 +1,22 @@
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
 
 #include "accesslog.h"
-#include "netutils.h"
 
 // RFC 1929 limita el usuario a 255 bytes y RFC 1928 el FQDN a 255: entran enteros.
 #define USER_BUF 256
 #define DEST_BUF 256
+// "[" + IPv6 (hasta 45) + "]:" + puerto (5) + '\0'
+#define ADDR_BUF 64
+// Buffer de stdio del archivo: las líneas se juntan acá y se vuelcan en accesslog_flush().
+#define FILE_BUF_SIZE (16 * 1024)
 
 static FILE *out = NULL;
 static bool  owns_file = false;  // true si hay que fclose() (no es stdout)
+static char  file_buf[FILE_BUF_SIZE];
 
 bool
 accesslog_init(const char *path) {
@@ -24,8 +30,17 @@ accesslog_init(const char *path) {
     if (out == NULL) {
         return false;
     }
+    // Totalmente bufferizado: write() al archivo solo cuando se llena o en accesslog_flush().
+    setvbuf(out, file_buf, _IOFBF, sizeof(file_buf));
     owns_file = true;
     return true;
+}
+
+void
+accesslog_flush(void) {
+    if (out != NULL) {
+        fflush(out);
+    }
 }
 
 void
@@ -61,6 +76,31 @@ atyp_name(const enum accesslog_atyp atyp) {
     return "unknown";
 }
 
+// "host:puerto"; una IPv6 va entre corchetes ("[::1]:5000") para que no se confunda con el puerto.
+static void
+format_hostport(char *dst, const size_t dstlen, const char *host, const bool ipv6, const unsigned port) {
+    snprintf(dst, dstlen, ipv6 ? "[%s]:%u" : "%s:%u", host, port);
+}
+
+static void
+format_client(char *dst, const size_t dstlen, const struct sockaddr *client) {
+    char ip[INET6_ADDRSTRLEN];
+    if (client != NULL && client->sa_family == AF_INET) {
+        const struct sockaddr_in *a = (const struct sockaddr_in *) client;
+        if (inet_ntop(AF_INET, &a->sin_addr, ip, sizeof(ip)) != NULL) {
+            format_hostport(dst, dstlen, ip, false, ntohs(a->sin_port));
+            return;
+        }
+    } else if (client != NULL && client->sa_family == AF_INET6) {
+        const struct sockaddr_in6 *a = (const struct sockaddr_in6 *) client;
+        if (inet_ntop(AF_INET6, &a->sin6_addr, ip, sizeof(ip)) != NULL) {
+            format_hostport(dst, dstlen, ip, true, ntohs(a->sin6_port));
+            return;
+        }
+    }
+    snprintf(dst, dstlen, "-");
+}
+
 void
 accesslog_write(const char *user, const struct sockaddr *client,
                 const enum accesslog_atyp atyp, const char *dest,
@@ -82,19 +122,19 @@ accesslog_write(const char *user, const struct sockaddr *client,
         snprintf(who, sizeof(who), "-");
     }
 
-    char cli[SOCKADDR_TO_HUMAN_MIN] = "-";
-    if (client != NULL) {
-        sockaddr_to_human(cli, sizeof(cli), client);
-    }
+    char cli[ADDR_BUF];
+    format_client(cli, sizeof(cli), client);
 
-    char dst[DEST_BUF];  // un FQDN de 255 bytes entra entero
-    sanitize(dst, sizeof(dst), dest);
-    if (dst[0] == '\0') {
-        snprintf(dst, sizeof(dst), "-");
+    char host[DEST_BUF];  // un FQDN de 255 bytes entra entero
+    sanitize(host, sizeof(host), dest);
+    if (host[0] == '\0') {
+        snprintf(host, sizeof(host), "-");
     }
+    char dst[DEST_BUF + 8];
+    format_hostport(dst, sizeof(dst), host, atyp == ACCESSLOG_IPV6, (unsigned) dest_port);
 
-    fprintf(out, "%s user=%s client=%s atyp=%s dest=%s:%u rep=0x%02x\n",
-            when, who, cli, atyp_name(atyp), dst, (unsigned) dest_port, (unsigned) rep);
-    // Cada línea se vuelca enseguida: si el proceso muere no se pierde el último request.
-    fflush(out);
+    // Sin fflush acá: la línea queda en el buffer hasta accesslog_flush() (una vez por
+    // vuelta del selector) o hasta que el buffer se llene. Así no hay un write() por request.
+    fprintf(out, "%s user=%s client=%s atyp=%s dest=%s rep=0x%02x\n",
+            when, who, cli, atyp_name(atyp), dst, (unsigned) rep);
 }

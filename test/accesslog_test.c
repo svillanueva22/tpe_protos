@@ -82,6 +82,45 @@ START_TEST (test_one_line_per_request_and_append) {
 }
 END_TEST
 
+START_TEST (test_ipv6_in_brackets) {
+    remove(LOG_PATH);
+    struct sockaddr_in6 c6;
+    memset(&c6, 0, sizeof(c6));
+    c6.sin6_family = AF_INET6;
+    c6.sin6_port = htons(5000);
+    inet_pton(AF_INET6, "::1", &c6.sin6_addr);
+    ck_assert(accesslog_init(LOG_PATH));
+    accesslog_write("alice", (const struct sockaddr *) &c6, ACCESSLOG_IPV6, "2001:db8::1", 22, 0x00);
+    accesslog_close();
+
+    char line[512];
+    ck_assert(read_line(0, line, sizeof(line)));
+    // sin corchetes "::1:5000" no se sabría dónde termina la IP y empieza el puerto
+    ck_assert_ptr_ne(strstr(line, " client=[::1]:5000 "), NULL);
+    ck_assert_ptr_ne(strstr(line, " dest=[2001:db8::1]:22 "), NULL);
+}
+END_TEST
+
+START_TEST (test_flush_writes_the_buffer) {
+    remove(LOG_PATH);
+    const struct sockaddr_in c = client_v4();
+    ck_assert(accesslog_init(LOG_PATH));
+    accesslog_write("alice", (const struct sockaddr *) &c, ACCESSLOG_FQDN, "a.com", 1, 0x00);
+    accesslog_flush();  // lo que hace main una vez por vuelta del selector
+
+    // el proceso sigue vivo y el archivo sigue abierto: la línea ya tiene que estar en disco
+    char line[512];
+    ck_assert(read_line(0, line, sizeof(line)));
+    ck_assert_ptr_ne(strstr(line, "user=alice"), NULL);
+    accesslog_close();
+}
+END_TEST
+
+START_TEST (test_flush_without_init_is_noop) {
+    accesslog_flush();
+}
+END_TEST
+
 START_TEST (test_anonymous_and_sanitized) {
     remove(LOG_PATH);
     const struct sockaddr_in c = client_v4();
@@ -118,6 +157,9 @@ accesslog_suite(void) {
     TCase *tc = tcase_create("accesslog");
     tcase_add_test(tc, test_line_format);
     tcase_add_test(tc, test_one_line_per_request_and_append);
+    tcase_add_test(tc, test_ipv6_in_brackets);
+    tcase_add_test(tc, test_flush_writes_the_buffer);
+    tcase_add_test(tc, test_flush_without_init_is_noop);
     tcase_add_test(tc, test_anonymous_and_sanitized);
     tcase_add_test(tc, test_write_without_init_is_noop);
     tcase_add_test(tc, test_init_fails_on_bad_path);

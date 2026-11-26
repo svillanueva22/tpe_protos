@@ -155,9 +155,10 @@ main(const int argc, char **argv) {
             goto finally;
         }
     }
-    // TODO: opción de línea de comandos para mandar el access log a un archivo (por ahora stdout)
-    if (!accesslog_init(NULL)) {
-        LOG(ERROR, "abriendo el access log");
+    // El access log va a un archivo, bufferizado (docs/decisiones-parte-c.md, D1).
+    // TODO: opción de línea de comandos para elegir la ruta (por ahora fija).
+    if (!accesslog_init(ACCESSLOG_DEFAULT_PATH)) {
+        LOG(ERROR, "abriendo el access log %s: %s", ACCESSLOG_DEFAULT_PATH, strerror(errno));
         ret = 1;
         goto finally;
     }
@@ -210,6 +211,8 @@ main(const int argc, char **argv) {
             ret = 2;
             break;
         }
+        // Un solo write() del access log por vuelta (también despierta por timeout, cada 10 s)
+        accesslog_flush();
     }
     LOG(INFO, "cerrando");
 

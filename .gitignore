@@ -3,6 +3,7 @@ build-test/
 build/
 socks5d
 mgmt-client
+access.log
 socks5d-debug
 mgmt-client-debug
 *.dSYM/
