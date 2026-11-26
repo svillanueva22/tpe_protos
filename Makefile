@@ -22,11 +22,16 @@ LIB_SRCS = \
     src/lib/stm.c
 
 SERVER_SRCS = \
-    src/server/main.c \
-    src/server/args.c
+    src/server/main.c      \
+    src/server/args.c      \
+    src/server/users.c     \
+    src/server/metrics.c   \
+    src/server/config.c    \
+    src/server/accesslog.c
 
 # TODO Fase 1: agregar src/socks5/socks5nio.c cuando existan hello.h y request.h.
-SOCKS5_SRCS =
+SOCKS5_SRCS = \
+    src/socks5/pop3_sniffer.c
 
 UTILS_SRCS = \
     src/utils/logger.c \
@@ -97,6 +102,18 @@ TEST_CC = $(CC) $(CFLAGS) $(CHECK_CFLAGS) $(INCLUDES)
 
 TESTS = $(BUILD)/test_buffer $(BUILD)/test_netutils $(BUILD)/test_parser \
         $(BUILD)/test_parser_utils $(BUILD)/test_selector $(BUILD)/test_stm
+
+# Tests de cada parte: cualquier test/<modulo>_test.c se compila y corre solo con
+# `make test`, sin tocar el Makefile.
+TEST_SRCS = $(wildcard test/*_test.c)
+TESTS    += $(patsubst test/%_test.c,$(BUILD)/test/%_test,$(TEST_SRCS))
+
+# Un test de parte se linkea contra todo el servidor menos main.o (que tiene main()).
+TEST_OBJS = $(filter-out $(BUILD)/server/main.o,$(ALL_OBJS))
+
+$(BUILD)/test/%_test: test/%_test.c $(TEST_OBJS)
+	@mkdir -p $(dir $@)
+	$(TEST_CC) -o $@ $^ $(CHECK_LIBS)
 
 # Si un test falla, `make test` termina con error.
 test: $(TESTS)

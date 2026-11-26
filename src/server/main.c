@@ -11,10 +11,14 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
+#include "accesslog.h"
 #include "args.h"
+#include "config.h"
 #include "logger.h"
+#include "metrics.h"
 #include "netutils.h"
 #include "selector.h"
+#include "users.h"
 
 static volatile sig_atomic_t done = 0;
 
@@ -29,7 +33,9 @@ passive_close(struct selector_key *key) {
     close(key->fd);
 }
 
-// TODO Fase 1: reemplazar por socksv5_passive_accept / el accept de management
+// Handler provisorio de ambos sockets pasivos: acepta, loguea y cierra.
+// TODO Parte A: reemplazar por socksv5_passive_accept en socks_handler.
+// TODO Parte D: reemplazar por mgmt_passive_accept en mgmt_handler.
 static void
 passive_accept(struct selector_key *key) {
     struct sockaddr_storage client_addr;
@@ -98,18 +104,25 @@ finally:
     return fd;
 }
 
-static bool
-listen_on(fd_selector selector, const char *addr, const unsigned short port, const char *name) {
-    static const struct fd_handler passive_handler = {
-        .handle_read  = passive_accept,
-        .handle_close = passive_close,
-    };
+// Un handler por servicio: cada parte cambia solo el suyo, sin tocar listen_on.
+static const struct fd_handler socks_handler = {
+    .handle_read  = passive_accept,  // TODO Parte A: socksv5_passive_accept
+    .handle_close = passive_close,
+};
 
+static const struct fd_handler mgmt_handler = {
+    .handle_read  = passive_accept,  // TODO Parte D: mgmt_passive_accept
+    .handle_close = passive_close,
+};
+
+static bool
+listen_on(fd_selector selector, const struct fd_handler *handler,
+          const char *addr, const unsigned short port, const char *name) {
     const int fd = passive_socket(addr, port);
     if (fd < 0) {
         return false;
     }
-    const selector_status ss = selector_register(selector, fd, &passive_handler, OP_READ, (void *) name);
+    const selector_status ss = selector_register(selector, fd, handler, OP_READ, (void *) name);
     if (ss != SELECTOR_SUCCESS) {
         LOG(ERROR, "registrando %s:%hu: %s", addr, port, selector_error(ss));
         close(fd);
@@ -129,6 +142,25 @@ main(const int argc, char **argv) {
 
     int ret = 0;
     fd_selector selector = NULL;
+
+    // Estado global del servidor (cada módulo es dueño de lo suyo)
+    config_init(args.disectors_enabled);
+    users_init();
+    metrics_init();
+    for (int i = 0; i < args.nusers; i++) {
+        const users_status us = users_add(args.users[i].name, args.users[i].pass);
+        if (us != USERS_OK) {
+            LOG(ERROR, "cargando usuario %s (código %d)", args.users[i].name, (int) us);
+            ret = 1;
+            goto finally;
+        }
+    }
+    // TODO: opción de línea de comandos para mandar el access log a un archivo (por ahora stdout)
+    if (!accesslog_init(NULL)) {
+        LOG(ERROR, "abriendo el access log");
+        ret = 1;
+        goto finally;
+    }
 
     struct sigaction sa = { .sa_handler = sigterm_handler };
     sigemptyset(&sa.sa_mask);
@@ -160,12 +192,13 @@ main(const int argc, char **argv) {
     // Con la dirección por defecto alcanza con que levante una de las dos familias
     int socks_listening = 0;
     if (args.socks_addr == NULL) {
-        socks_listening += listen_on(selector, "0.0.0.0", args.socks_port, "SOCKS");
-        socks_listening += listen_on(selector, "::",      args.socks_port, "SOCKS");
+        socks_listening += listen_on(selector, &socks_handler, "0.0.0.0", args.socks_port, "SOCKS");
+        socks_listening += listen_on(selector, &socks_handler, "::",      args.socks_port, "SOCKS");
     } else {
-        socks_listening += listen_on(selector, args.socks_addr, args.socks_port, "SOCKS");
+        socks_listening += listen_on(selector, &socks_handler, args.socks_addr, args.socks_port, "SOCKS");
     }
-    if (socks_listening == 0 || !listen_on(selector, args.mng_addr, args.mng_port, "management")) {
+    if (socks_listening == 0
+        || !listen_on(selector, &mgmt_handler, args.mng_addr, args.mng_port, "management")) {
         ret = 1;
         goto finally;
     }
@@ -186,5 +219,6 @@ finally:
         selector_destroy(selector);
     }
     selector_close();
+    accesslog_close();
     return ret;
 }
