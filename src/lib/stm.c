@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include "stm.h"
 
+struct selector_key *key = NULL;
+
 #define N(x) (sizeof(x)/sizeof((x)[0]))
 
 void
