@@ -13,6 +13,7 @@ struct users
 
 struct socks5args
 {
+    // NULL: escuchar en 0.0.0.0 y en ::
     char* socks_addr;
     unsigned short socks_port;
 
@@ -22,6 +23,7 @@ struct socks5args
     bool disectors_enabled;
 
     struct users users[MAX_USERS];
+    int nusers;
 };
 
 /**
