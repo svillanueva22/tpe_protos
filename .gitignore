@@ -1,2 +1,10 @@
 .DS_Store
 build-test/
+build/
+socks5d
+mgmt-client
+socks5d-debug
+mgmt-client-debug
+*.dSYM/
+.vscode/
+.idea/

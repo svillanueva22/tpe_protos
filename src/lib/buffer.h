@@ -1,3 +1,4 @@
+/** Basado en código de Juan F. Codagnone — Protocolos de Comunicación, ITBA */
 #ifndef BUFFER_H_VelRDAxzvnuFmwEaR0ftrkIinkT
 #define BUFFER_H_VelRDAxzvnuFmwEaR0ftrkIinkT
 

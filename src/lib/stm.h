@@ -1,3 +1,4 @@
+/** Basado en código de Juan F. Codagnone — Protocolos de Comunicación, ITBA */
 #ifndef STM_H_wL7YxN65ZHqKGvCPrNbPtMJgL8B
 #define STM_H_wL7YxN65ZHqKGvCPrNbPtMJgL8B
 
@@ -34,7 +35,7 @@ struct state_machine {
     const struct state_definition *current;
 };
 
-struct selector_key *key;
+extern struct selector_key *key;
 
 /**
  * definición de un estado de la máquina de estados

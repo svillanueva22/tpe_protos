@@ -1,3 +1,8 @@
+/**
+ * parser_utils.c - factory de ciertos parsers típicos
+ *
+ * Basado en código de Juan F. Codagnone — Protocolos de Comunicación, ITBA
+ */
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>

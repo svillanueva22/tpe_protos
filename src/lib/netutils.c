@@ -1,3 +1,8 @@
+/**
+ * netutils.c - pequeñas utilidades de red
+ *
+ * Basado en código de Juan F. Codagnone — Protocolos de Comunicación, ITBA
+ */
 #include <stdbool.h>
 #include <errno.h>
 #include <string.h>
@@ -5,6 +10,10 @@
 
 #include <unistd.h>
 #include <arpa/inet.h>
+
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0  // FIX: no existe en macOS; SIGPIPE se ignora en main
+#endif
 
 #include "netutils.h"
 

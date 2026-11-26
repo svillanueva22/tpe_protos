@@ -1,5 +1,7 @@
 /**
  * selector.c - un muliplexor de entrada salida
+ *
+ * Basado en código de Juan F. Codagnone — Protocolos de Comunicación, ITBA
  */
 #include <stdio.h>  // perror
 #include <stdlib.h> // malloc
@@ -14,7 +16,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/select.h>
-#include <sys/signal.h>
+#include <signal.h>  // FIX: sys/signal.h no declara sigaction & cía. con _POSIX_C_SOURCE en macOS
 #include "selector.h"
 
 #define N(x) (sizeof(x)/sizeof((x)[0]))
@@ -50,7 +52,7 @@ selector_error(const selector_status status) {
 
 static void
 wake_handler(const int signal) {
-    // nada que hacer. está solo para interrumpir el select
+    (void) signal;  // FIX: parámetro no usado; solo interrumpe el select
 }
 
 // señal a usar para las notificaciones de resolución

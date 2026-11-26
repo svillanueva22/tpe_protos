@@ -48,12 +48,12 @@ Otros pendientes detectados:
 | Carpetas | `src/lib/` cátedra · `src/utils/` utils de clase · `src/server/` main de `socks5d` · `src/socks5/` SOCKS (Fase 1) · `src-client/` `mgmt-client` · `build/` objetos |
 | Includes | Sin ruta: `#include "selector.h"`. El Makefile pasa `-Isrc/lib -Isrc/server -Isrc/socks5 -Isrc/mgmt -Isrc/utils` |
 | Flags | `-std=c11 -Wall -Wextra -pedantic -g -D_POSIX_C_SOURCE=200112L -pthread` (no agregar `_GNU_SOURCE` sin avisar) |
-| Macro de log | Se llama **`LOG(level, fmt, ...)`**. La Parte 4 hace el rename; la Parte 3 usa `LOG` desde el día 1 |
+| Macro de log | **`LOG(level, ...)`** (el formato va dentro de `__VA_ARGS__`, así `LOG(INFO, "texto")` compila sin warnings con `-pedantic`). La Parte 4 hace el rename; la Parte 3 usa `LOG` desde el día 1 |
 | `SIGPIPE` | Se ignora en `main` con `signal(SIGPIPE, SIG_IGN)`. `MSG_NOSIGNAL` queda como `0` si no existe |
 | Defaults de red | SOCKS `0.0.0.0:1080` + `[::]:1080` · management `127.0.0.1:8080` |
 | Makefile | **Dueño: Parte 2.** Los demás no lo editan: le avisan qué fuentes agregan |
 | Ramas | `fase0/lib`, `fase0/build`, `fase0/server`, `fase0/client` → PR a `main` |
-| Código de la cátedra | Si se toca, comentar `// FIX: <motivo>`. Atribución en el header de cada archivo |
+| Código de la cátedra | Si se toca, comentar `// FIX: <motivo>`. Sin headers de créditos (ver `AGENTS.md`) |
 | Review | Cada PR lo revisa al menos otro integrante antes de mergear |
 
 ---
@@ -96,9 +96,7 @@ main ───────┤                               ├──► todos r
    #endif
    ```
 4. Borrar `src/lib/foo.dot`.
-5. Agregar en el header de cada archivo de `src/lib/`:
-   `Basado en código de Juan F. Codagnone — Protocolos de Comunicación, ITBA`.
-6. Instalar Check (`brew install check` / `sudo apt install check`) y hacer pasar los 6
+5. Instalar Check (`brew install check` / `sudo apt install check`) y hacer pasar los 6
    tests (`buffer`, `netutils`, `parser`, `parser_utils`, `selector`, `stm`). Si algún
    test falla por un bug real de la cátedra, arreglarlo con `// FIX:` y contarlo en el PR.
 
@@ -175,8 +173,9 @@ y `make debug` + Ctrl+C no reporta leaks.
 
 **Rama:** `fase0/client` · **Toca solo:** `src/utils/`, `src-client/`
 
-1. `src/utils/logger.h`: renombrar la macro `log` → `LOG` y actualizar todos los usos en
-   `src/utils/*.c` (`grep -n 'log(' src/utils/*.c`).
+1. `src/utils/logger.h`: reemplazar `log(level, fmt, ...)` por `LOG(level, ...)` con
+   `fprintf(stderr, __VA_ARGS__)` (el `##__VA_ARGS__` actual es extensión GNU) y actualizar
+   todos los usos en `src/utils/*.c` (`grep -n 'log(' src/utils/*.c`).
 2. `src/utils/tcpServerUtil.{c,h}`: el echo no se usa en el servidor (es bloqueante).
    Borrar `handleTCPEchoClient` (recomendado) o corregir la firma a `int`.
 3. `src-client/main.c` + `src-client/args.{c,h}`:
@@ -201,5 +200,4 @@ y `make debug` + Ctrl+C no reporta leaks.
 - [ ] `socks5d` escucha en v4, v6 y management; sale limpio con `SIGINT`/`SIGTERM`
 - [ ] `mgmt-client` conecta al servidor
 - [ ] `README.md` en UTF-8 y actualizado
-- [ ] Atribución a la cátedra en `src/lib/` y en los archivos derivados de `docs/`
 - [ ] Todo mergeado a `main` vía PR revisado

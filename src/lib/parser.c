@@ -1,3 +1,8 @@
+/**
+ * parser.c - pequeño motor para parsers/lexers
+ *
+ * Basado en código de Juan F. Codagnone — Protocolos de Comunicación, ITBA
+ */
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -60,7 +65,7 @@ parser_feed(struct parser *p, const uint8_t c) {
         const int when = state[i].when;
         if (state[i].when <= 0xFF) {
             matched = (c == when);
-        } else if(state[i].when == ANY) {
+        } else if((unsigned)state[i].when == ANY) {
             matched = true;
         } else if(state[i].when > 0xFF) {
             matched = (type & when);
