@@ -49,7 +49,7 @@ $(BUILD)/%.o: src/%.c
 
 # ── Tests (requiere libcheck: apt install check) ──────────────────────
 
-CHECKLIBS = -lcheck -lm -lpthread
+CHECKLIBS = -lcheck -lsubunit -lm -lpthread
 
 test: $(BUILD)/test_buffer $(BUILD)/test_parser $(BUILD)/test_parser_utils \
       $(BUILD)/test_selector $(BUILD)/test_stm
