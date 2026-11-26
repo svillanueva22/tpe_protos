@@ -22,7 +22,7 @@ SERVER_SRCS = \
     src/server/args.c
 
 SOCKS5_SRCS = \
-    src/socks5/socks5nio.c
+    # src/socks5/socks5nio.c  # TODO Fase 1: descomentar cuando hello.h y request.h existan
 
 UTILS_SRCS = \
     src/utils/logger.c \

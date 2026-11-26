@@ -1,0 +1,5 @@
+build/
+socks5d
+mgmt-client
+*.dSYM/
+.vscode/
