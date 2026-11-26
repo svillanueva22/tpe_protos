@@ -4,7 +4,7 @@ Guía para agentes de código (Claude, Codex, Copilot, etc.) que trabajen en est
 Leela entera antes de tocar código. El enunciado oficial está en `docs/20262-r0.txt`;
 si algo de este archivo lo contradice, **manda el enunciado**.
 
-Cuando escribas codigo no escribas comentarios innecesarios como dar creditos o decir de donde sacaste. Los unicos comentarios que quiero que escribas son para explicar si el codigo no se entiende
+
 ---
 
 ## 1. Qué estamos construyendo
