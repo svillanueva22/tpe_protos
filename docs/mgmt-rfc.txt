@@ -1,0 +1,136 @@
+Protocolo de Management del proxy SOCKSv5 -- TPE Protocolos de Comunicacion 2026/2
+Version 1.0
+
+1. INTRODUCCION
+
+   Este documento describe el protocolo de administracion remota (management)
+   del servidor SOCKSv5 implementado para el TPE. Permite a un administrador
+   consultar metricas, administrar usuarios y leer/modificar la configuracion
+   en tiempo de ejecucion, sin reiniciar el servidor.
+
+2. TRANSPORTE
+
+   El protocolo corre sobre TCP, en un puerto separado del puerto SOCKS
+   (por defecto 8080), atendido por el mismo selector (reactor no bloqueante)
+   que atiende las conexiones SOCKS. No hay UDP.
+
+3. FORMATO DE MENSAJE
+
+   El protocolo es de texto plano, un mensaje por linea, terminado en '\n'
+   (LF, 0x0A). No se usa '\r\n': el proposito es simplicidad para debug
+   manual (nc, telnet), no interoperar con herramientas que esperen CRLF.
+
+   Un mensaje de pedido (cliente -> servidor) tiene la forma:
+
+       COMANDO [arg1] [arg2] ...
+
+   Comando y argumentos separados por un unico espacio. Un argumento con
+   espacios no esta soportado en esta version (no hace falta: usuarios y
+   valores de configuracion no llevan espacios).
+
+   Un mensaje de respuesta (servidor -> cliente) es de una de dos formas:
+
+       OK [payload]\n
+
+   o, para respuestas de varias lineas (listados):
+
+       OK\n
+       linea 1\n
+       linea 2\n
+       .\n
+
+   (la linea con un unico '.' marca el fin del listado, igual que en POP3).
+   En caso de error:
+
+       ERR <CODIGO> <mensaje legible>\n
+
+4. BANNER Y VERSION
+
+   Al aceptar la conexion, el servidor envia inmediatamente:
+
+       MGMT 1.0\n
+
+   El cliente debe verificar que la version mayor coincide con la que
+   soporta antes de autenticarse.
+
+5. AUTENTICACION
+
+   Toda conexion arranca sin autenticar. El unico comando valido antes de
+   autenticarse es AUTH:
+
+       AUTH <usuario> <password>
+
+   Respuestas: 'OK' si las credenciales son validas (pasan a estar
+   autenticadas para el resto de la conexion), 'ERR BAD_AUTH credenciales
+   invalidas' si no. Cualquier otro comando antes de AUTH exitoso responde
+   'ERR NOT_AUTHENTICATED'.
+
+   Las credenciales del administrador se configuran por linea de comandos
+   al levantar el servidor (opcion que define la Parte C en args.c).
+
+6. COMANDOS (post-autenticacion)
+
+   METRICS
+       Devuelve, en formato de listado multilinea, las metricas acumuladas:
+       conexiones historicas, concurrentes, bytes transferidos, fallos de
+       autenticacion, y un conteo por codigo de REP de SOCKS5.
+
+   USERS LIST
+       Listado multilinea de usuarios configurados (sin mostrar passwords).
+
+   USERS ADD <usuario> <password>
+       Da de alta un usuario. ERR USER_EXISTS si ya existe.
+
+   USERS DEL <usuario>
+       Da de baja un usuario. ERR NOT_FOUND si no existe.
+
+   USERS PASSWD <usuario> <password>
+       Cambia la contrasena de un usuario existente. ERR NOT_FOUND si no
+       existe.
+
+   CONFIG GET <clave>
+       Devuelve el valor actual de una clave de configuracion (buffer size,
+       timeouts, sniffer on/off, nivel de log). ERR NOT_FOUND si la clave
+       no existe.
+
+   CONFIG SET <clave> <valor>
+       Cambia una clave de configuracion en caliente. ERR INVALID_ARGS si
+       el valor no es valido para esa clave.
+
+   QUIT
+       Cierra la conexion de management de forma prolija. Responde 'OK' y
+       el servidor hace shutdown() del lado de escritura.
+
+7. CODIGOS DE ERROR
+
+   BAD_COMMAND         -- el comando no existe
+   BAD_AUTH             -- usuario o password incorrectos
+   NOT_AUTHENTICATED    -- se pidio un comando que requiere AUTH previo
+   INVALID_ARGS         -- cantidad o formato de argumentos invalido
+   NOT_FOUND            -- el recurso (usuario, clave de config) no existe
+   USER_EXISTS          -- alta de un usuario que ya existe
+   INTERNAL_ERROR        -- error interno del servidor
+
+8. EJEMPLO DE SESION
+
+   S: MGMT 1.0
+   C: AUTH admin secreto123
+   S: OK
+   C: METRICS
+   S: OK
+   S: conexiones_historicas=42
+   S: conexiones_concurrentes=3
+   S: bytes_totales=1048576
+   S: fallos_auth=2
+   S: .
+   C: USERS ADD pepe 1234
+   S: OK
+   C: QUIT
+   S: OK
+
+9. CONSIDERACIONES DE SEGURIDAD
+
+   Las credenciales viajan en texto plano: se asume que el puerto de
+   management se expone solo en una interfaz de confianza (loopback o red
+   interna), igual que asume el enunciado del TPE. No es un requisito de
+   esta entrega cifrar el canal.

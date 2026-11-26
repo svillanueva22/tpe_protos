@@ -17,7 +17,7 @@ port(const char *s)
         || sl <= 0 || sl > USHRT_MAX)
     {
         fprintf(stderr, "el puerto debe ser un entero entre 1 y 65535: %s\n", s);
-        exit(1);
+        exit(4);
     }
     return (unsigned short)sl;
 }
@@ -27,22 +27,33 @@ version(void)
 {
     fprintf(stderr,
             "mgmt-client version 0.0\n"
-            "ITBA Protocolos de Comunicaci\xc3\xb3n 2026/2 -- Grupo X\n");
+            "ITBA Protocolos de Comunicación 2026/2 -- Grupo X\n");
 }
 
 static void
 usage(const char *progname)
 {
     fprintf(stderr,
-            "Uso: %s [OPCION]...\n"
+            "Uso: %s [-L addr] [-P port] -u usuario -p password <subcomando> [args...]\n"
             "\n"
             "   -h               Imprime esta ayuda y termina.\n"
-            "   -L <addr>        Direcci\xc3\xb3n del servicio de management (default 127.0.0.1).\n"
+            "   -L <addr>        Dirección del servicio de management (default 127.0.0.1).\n"
             "   -P <port>        Puerto del servicio de management (default 8080).\n"
-            "   -v               Imprime la versi\xc3\xb3n y termina.\n"
+            "   -u <usuario>     Usuario administrador (requerido).\n"
+            "   -p <password>    Password del administrador (requerido).\n"
+            "   -v               Imprime la versión y termina.\n"
+            "\n"
+            "Subcomandos:\n"
+            "   metrics\n"
+            "   users list\n"
+            "   users add <usuario> <password>\n"
+            "   users del <usuario>\n"
+            "   users passwd <usuario> <password>\n"
+            "   config get <clave>\n"
+            "   config set <clave> <valor>\n"
             "\n",
             progname);
-    exit(1);
+    exit(4);
 }
 
 void
@@ -50,9 +61,11 @@ parse_client_args(const int argc, char **argv, struct client_args *args)
 {
     args->mng_addr = "127.0.0.1";
     args->mng_port = 8080;
+    args->admin_user = NULL;
+    args->admin_pass = NULL;
 
     int c;
-    while ((c = getopt(argc, argv, "hL:P:v")) != -1)
+    while ((c = getopt(argc, argv, "hL:P:u:p:v")) != -1)
     {
         switch (c)
         {
@@ -65,23 +78,33 @@ parse_client_args(const int argc, char **argv, struct client_args *args)
         case 'P':
             args->mng_port = port(optarg);
             break;
+        case 'u':
+            args->admin_user = optarg;
+            break;
+        case 'p':
+            args->admin_pass = optarg;
+            break;
         case 'v':
             version();
             exit(0);
         default:
             fprintf(stderr, "argumento desconocido.\n");
-            exit(1);
+            exit(4);
         }
     }
 
-    if (optind < argc)
+    if (args->admin_user == NULL || args->admin_pass == NULL)
     {
-        fprintf(stderr, "argumento no aceptado: ");
-        while (optind < argc)
-        {
-            fprintf(stderr, "%s ", argv[optind++]);
-        }
-        fprintf(stderr, "\n");
-        exit(1);
+        fprintf(stderr, "faltan -u y/o -p (credenciales del administrador).\n");
+        usage(argv[0]);
+    }
+
+    args->cmd_argc = argc - optind;
+    args->cmd_argv = argv + optind;
+
+    if (args->cmd_argc < 1)
+    {
+        fprintf(stderr, "falta el subcomando.\n");
+        usage(argv[0]);
     }
 }
