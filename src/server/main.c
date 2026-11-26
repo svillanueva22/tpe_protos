@@ -15,6 +15,8 @@
 #include "logger.h"
 #include "netutils.h"
 #include "selector.h"
+#include "socks5nio.h"
+#include "users.h"
 
 static volatile sig_atomic_t done = 0;
 
@@ -29,7 +31,7 @@ passive_close(struct selector_key *key) {
     close(key->fd);
 }
 
-// TODO Fase 1: reemplazar por socksv5_passive_accept / el accept de management
+// TODO Parte D: reemplazar por mgmt_passive_accept
 static void
 passive_accept(struct selector_key *key) {
     struct sockaddr_storage client_addr;
@@ -99,17 +101,13 @@ finally:
 }
 
 static bool
-listen_on(fd_selector selector, const char *addr, const unsigned short port, const char *name) {
-    static const struct fd_handler passive_handler = {
-        .handle_read  = passive_accept,
-        .handle_close = passive_close,
-    };
-
+listen_on(fd_selector selector, const char *addr, const unsigned short port, const char *name,
+          const struct fd_handler *handler) {
     const int fd = passive_socket(addr, port);
     if (fd < 0) {
         return false;
     }
-    const selector_status ss = selector_register(selector, fd, &passive_handler, OP_READ, (void *) name);
+    const selector_status ss = selector_register(selector, fd, handler, OP_READ, (void *) name);
     if (ss != SELECTOR_SUCCESS) {
         LOG(ERROR, "registrando %s:%hu: %s", addr, port, selector_error(ss));
         close(fd);
@@ -123,6 +121,9 @@ int
 main(const int argc, char **argv) {
     struct socks5args args;
     parse_args(argc, argv, &args);
+    for (int i = 0; i < args.nusers; i++) {
+        users_add(args.users[i].name, args.users[i].pass);
+    }
 
     // no tenemos nada que leer de stdin y ahorramos un fd
     close(0);
@@ -157,15 +158,24 @@ main(const int argc, char **argv) {
         goto finally;
     }
 
+    static const struct fd_handler socks_handler = {
+        .handle_read  = socksv5_passive_accept,
+        .handle_close = passive_close,
+    };
+    static const struct fd_handler mng_handler = {
+        .handle_read  = passive_accept,
+        .handle_close = passive_close,
+    };
+
     // Con la dirección por defecto alcanza con que levante una de las dos familias
     int socks_listening = 0;
     if (args.socks_addr == NULL) {
-        socks_listening += listen_on(selector, "0.0.0.0", args.socks_port, "SOCKS");
-        socks_listening += listen_on(selector, "::",      args.socks_port, "SOCKS");
+        socks_listening += listen_on(selector, "0.0.0.0", args.socks_port, "SOCKS", &socks_handler);
+        socks_listening += listen_on(selector, "::",      args.socks_port, "SOCKS", &socks_handler);
     } else {
-        socks_listening += listen_on(selector, args.socks_addr, args.socks_port, "SOCKS");
+        socks_listening += listen_on(selector, args.socks_addr, args.socks_port, "SOCKS", &socks_handler);
     }
-    if (socks_listening == 0 || !listen_on(selector, args.mng_addr, args.mng_port, "management")) {
+    if (socks_listening == 0 || !listen_on(selector, args.mng_addr, args.mng_port, "management", &mng_handler)) {
         ret = 1;
         goto finally;
     }
@@ -186,5 +196,6 @@ finally:
         selector_destroy(selector);
     }
     selector_close();
+    socksv5_pool_destroy();
     return ret;
 }
