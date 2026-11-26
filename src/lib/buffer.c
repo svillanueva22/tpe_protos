@@ -1,6 +1,8 @@
 /**
  * buffer.c - buffer con acceso directo (útil para I/O) que mantiene
  *            mantiene puntero de lectura y de escritura.
+ *
+ * Basado en código de Juan F. Codagnone — Protocolos de Comunicación, ITBA
  */
 #include <string.h>
 #include <stdint.h>

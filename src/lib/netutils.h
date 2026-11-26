@@ -1,3 +1,4 @@
+/** Basado en código de Juan F. Codagnone — Protocolos de Comunicación, ITBA */
 #ifndef NETUTILS_H_CTCyWGhkVt1pazNytqIRptmAi5U
 #define NETUTILS_H_CTCyWGhkVt1pazNytqIRptmAi5U
 
