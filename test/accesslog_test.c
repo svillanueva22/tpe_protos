@@ -68,6 +68,7 @@ START_TEST (test_line_format) {
     ck_assert_int_eq(line[4], '-');
     ck_assert_int_eq(line[10], 'T');
     ck_assert_int_eq(line[19], 'Z');
+    ck_assert_ptr_ne(strstr(line, " event=request "), NULL);
     ck_assert_ptr_ne(strstr(line, " user=alice "), NULL);
     ck_assert_ptr_ne(strstr(line, " client=192.0.2.7:51234 "), NULL);
     ck_assert_ptr_ne(strstr(line, " atyp=fqdn "), NULL);
@@ -180,6 +181,55 @@ START_TEST (test_anonymous_and_sanitized) {
 }
 END_TEST
 
+START_TEST (test_auth_fail_line) {
+    remove(LOG_PATH);
+    const struct sockaddr_in c = addr_v4("203.0.113.5", 40022);
+    ck_assert(accesslog_init(LOG_PATH));
+    accesslog_auth_fail((const struct sockaddr *) &c, "admin", 5);
+    accesslog_close();
+
+    char line[512];
+    ck_assert(read_line(0, line, sizeof(line)));
+    ck_assert_int_eq(line[19], 'Z');
+    ck_assert_ptr_ne(strstr(line, " event=auth_fail "), NULL);
+    ck_assert_ptr_ne(strstr(line, " user=admin "), NULL);
+    ck_assert_ptr_ne(strstr(line, " client=203.0.113.5:40022\n"), NULL);
+    // no es un request: no tiene destino ni REP
+    ck_assert_ptr_eq(strstr(line, "dest="), NULL);
+    ck_assert_ptr_eq(strstr(line, "rep="), NULL);
+    ck_assert(!read_line(1, line, sizeof(line)));
+}
+END_TEST
+
+START_TEST (test_auth_fail_user_is_sanitized_and_bounded) {
+    remove(LOG_PATH);
+    const struct sockaddr_in c = client_v4();
+    ck_assert(accesslog_init(LOG_PATH));
+    // bytes tal como llegan del cliente: con espacio, '\0' embebido y salto de línea
+    accesslog_auth_fail((const struct sockaddr *) &c, "a b\0c\nevent=request", 19);
+    accesslog_auth_fail((const struct sockaddr *) &c, NULL, 0);
+    char big[300];
+    memset(big, 'x', sizeof(big));
+    accesslog_auth_fail((const struct sockaddr *) &c, big, sizeof(big));  // ULEN no confiable
+    accesslog_close();
+
+    char line[1024];
+    ck_assert(read_line(0, line, sizeof(line)));
+    ck_assert_ptr_ne(strstr(line, " user=a_b_c_event=request "), NULL);  // no inyecta otro campo
+    ck_assert(read_line(1, line, sizeof(line)));
+    ck_assert_ptr_ne(strstr(line, " user=- "), NULL);
+    ck_assert(read_line(2, line, sizeof(line)));
+    ck_assert(strlen(line) < 400);               // el usuario no hace crecer la línea sin tope
+    ck_assert(!read_line(3, line, sizeof(line)));  // y siguen siendo 3 líneas
+}
+END_TEST
+
+START_TEST (test_auth_fail_without_init_is_noop) {
+    const struct sockaddr_in c = client_v4();
+    accesslog_auth_fail((const struct sockaddr *) &c, "x", 1);
+}
+END_TEST
+
 START_TEST (test_write_without_init_is_noop) {
     const struct sockaddr_in c = client_v4();
     accesslog_write("alice", (const struct sockaddr *) &c, ACCESSLOG_FQDN, "a.com", 1, NULL, 0);
@@ -203,6 +253,9 @@ accesslog_suite(void) {
     tcase_add_test(tc, test_flush_writes_the_buffer);
     tcase_add_test(tc, test_flush_without_init_is_noop);
     tcase_add_test(tc, test_anonymous_and_sanitized);
+    tcase_add_test(tc, test_auth_fail_line);
+    tcase_add_test(tc, test_auth_fail_user_is_sanitized_and_bounded);
+    tcase_add_test(tc, test_auth_fail_without_init_is_noop);
     tcase_add_test(tc, test_write_without_init_is_noop);
     tcase_add_test(tc, test_init_fails_on_bad_path);
     suite_add_tcase(s, tc);

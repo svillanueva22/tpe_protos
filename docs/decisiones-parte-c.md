@@ -4,6 +4,15 @@ Registro de decisiones de la Parte C (estado del servidor, logs y sniffer), con 
 para el informe y para la defensa. Una decisión por entrada. Si una se revisa, se agrega
 una nota al final de esa entrada en vez de borrarla.
 
+## Resumen de lo decidido
+
+| # | Decisión | Elegido | Alternativas descartadas |
+|---|----------|---------|--------------------------|
+| D1 | E/S del access log | Archivo con buffer, un flush por vuelta del selector | Cola + fd no bloqueante; thread de log (queda como mejora pendiente) |
+| D2 | Qué IP registra | `ip=` con la IP a la que realmente se conectó, además de `dest=` | Solo el destino pedido |
+| D3 | Intentos de auth fallidos | Línea `event=auth_fail` en el mismo access log | Solo el contador; archivo aparte |
+| — | Línea de cierre con bytes y duración | No se hace (no la pide el req. 8) | — |
+
 ---
 
 ## D1 — Cómo escribe el access log sin frenar al selector
@@ -87,13 +96,47 @@ comentario de `accesslog_write` en `src/server/accesslog.h`.
 
 ---
 
+## D3 — Los intentos de autenticación fallidos quedan en el access log
+
+**Fecha:** 2026-11-26 · **Estado:** decidida
+
+**Contexto.** Hasta ahora un fallo de RFC 1929 solo sumaba `metrics_auth_fail`, un contador
+global: sin quién lo intentó, desde dónde ni cuándo. El requerimiento 8 pide entender los
+accesos de cada usuario.
+
+**Opciones.** (A) dejar solo el contador; (B) una línea en el mismo access log; (C) un
+archivo aparte (`auth.log`).
+
+**Decisión: B.** Una línea por intento fallido, con un campo `event=` que distingue el tipo
+de línea. Las líneas de requests pasan a llevar `event=request`:
+
+```
+2026-11-26T22:42:31Z event=request user=alice client=10.0.0.5:51234 atyp=fqdn dest=example.com:80 ip=93.184.216.34 rep=0x00
+2026-11-26T22:42:45Z event=auth_fail user=admin client=203.0.113.5:40022
+```
+
+- `accesslog_auth_fail(client, user, ulen)` lo llama la Parte A al rechazar las credenciales
+  (el mismo par `user, ulen` que le pasa a `users_check`). La contraseña no se recibe ni se
+  loguea nunca.
+- Un `grep user=bob` muestra todo lo que ese usuario hizo o intentó: éxitos y fallos juntos.
+  `grep event=auth_fail` lista solo los rechazos.
+- `metrics_auth_fail` se sigue contando.
+- C descartada: dos archivos que rotar y buscar, sin ganar nada sobre B.
+
+**Limitaciones (van al informe).**
+1. **Un anónimo controla el volumen del log.** Hasta ahora cada línea requería haberse
+   autenticado; con D3 cualquiera que llegue al puerto genera líneas. No hay límite de tasa
+   (sería excesivo para este TP). El tamaño de cada línea sí está acotado: el usuario se
+   trunca a 255 bytes.
+2. **`user=` puede contener una contraseña**, si alguien la escribió en el campo de usuario.
+   Se trunca y se limpia, pero ese dato queda en el archivo.
+
+---
+
 ## Pendientes de decidir (Parte C)
 
 Se van charlando de a una; al decidir cada una se pasa a una entrada propia arriba.
 
-- **Intentos de auth fallidos en el access log**: una línea por intento (usuario intentado,
-  IP del cliente, hora), en el mismo archivo y con un campo `event=` para distinguirla. Hoy
-  solo se cuentan. Nunca se loguearía la contraseña.
 - **Línea de cierre con bytes y duración**: descartada por ahora (no la pide el
   requerimiento 8 y obliga a la Parte B a llevar contadores por conexión). Si se quiere
   consumo por usuario, es más limpio como métrica por usuario.

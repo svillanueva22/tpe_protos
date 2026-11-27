@@ -6,12 +6,16 @@
  *
  * Tiene que poder responder "¿quién se conectó a X y cuándo?" con un grep:
  *
- *   2026-11-26T22:42:31Z user=alice client=10.0.0.5:51234 atyp=fqdn dest=example.com:80 ip=93.184.216.34 rep=0x00
- *   2026-11-26T22:42:35Z user=bob client=[::1]:5000 atyp=ipv6 dest=[2001:db8::1]:22 ip=2001:db8::1 rep=0x05
- *   2026-11-26T22:42:40Z user=bob client=[::1]:5001 atyp=fqdn dest=no-existe.example:80 ip=- rep=0x04
+ *   2026-11-26T22:42:31Z event=request user=alice client=10.0.0.5:51234 atyp=fqdn dest=example.com:80 ip=93.184.216.34 rep=0x00
+ *   2026-11-26T22:42:35Z event=request user=bob client=[::1]:5000 atyp=ipv6 dest=[2001:db8::1]:22 ip=2001:db8::1 rep=0x05
+ *   2026-11-26T22:42:40Z event=request user=bob client=[::1]:5001 atyp=fqdn dest=no-existe.example:80 ip=- rep=0x04
+ *   2026-11-26T22:42:45Z event=auth_fail user=admin client=203.0.113.5:40022
  *
  *   - Fecha ISO-8601 en UTC.
- *   - Formato `clave=valor`, un request por línea. En `client=` y `dest=` las IPv6 van entre
+ *   - Formato `clave=valor`, un evento por línea. `event=` dice de qué tipo es: `request`
+ *     (un CONNECT con su resultado) o `auth_fail` (credenciales RFC 1929 rechazadas,
+ *     decisión D3). Un `grep user=bob` muestra todo lo que hizo o intentó ese usuario.
+ *     En `client=` y `dest=` las IPv6 van entre
  *     corchetes porque llevan puerto; `ip=` no lleva puerto y va sin corchetes.
  *   - dest= es lo que pidió el cliente; ip= es la IP a la que realmente se conectó el
  *     proxy (decisión D2). Sirve cuando una queja externa trae la IP del servidor y no el
@@ -35,6 +39,7 @@
  */
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <sys/socket.h>
 
@@ -61,6 +66,24 @@ bool accesslog_init(const char *path);
  * selector; el resto del código no necesita llamarlo. No-op si no hay access log abierto.
  */
 void accesslog_flush(void);
+
+/**
+ * Registra un intento de autenticación RFC 1929 rechazado (decisión D3). Lo llama la
+ * Parte A una vez, cuando users_check dice que no.
+ *
+ * @param client  dirección del cliente que se conectó al proxy.
+ * @param user    USERNAME tal como lo mandó el cliente: bytes SIN '\0' final, `ulen` de largo
+ *                (el mismo par que se le pasa a users_check). Se trunca a 255 bytes y los
+ *                espacios y caracteres de control, incluido un '\0', se reemplazan por '_'.
+ *                NULL o ulen == 0 se loguea como user=-.
+ *
+ * La contraseña no se recibe a propósito: no tiene que llegar nunca al log. Ojo: el
+ * usuario lo manda un cliente sin autenticar y a veces es una contraseña escrita en el
+ * campo equivocado; ese dato queda en el archivo (limitación para el informe).
+ *
+ * Es no-op si el access log no fue inicializado con accesslog_init.
+ */
+void accesslog_auth_fail(const struct sockaddr *client, const char *user, size_t ulen);
 
 /** Vuelca lo pendiente y cierra el access log. */
 void accesslog_close(void);

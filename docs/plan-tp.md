@@ -40,7 +40,7 @@ esperar a nadie. Cambiar una firma = avisar al grupo antes.
 | `src/socks5/request.h` | A | B, C | `struct request { cmd, atyp, dest (v4/v6/fqdn), dest_port }` y `enum socks_reply` (tabla `AGENTS.md` §5.3) |
 | `src/server/users.h` | C | A, D | `users_check(user, ulen, pass, plen)` (con longitudes, sin `'\0'`), `users_add`, `users_del`, `users_set_pass`, `users_count` + `users_name_at(i)` para listar |
 | `src/server/metrics.h` | C | A, B, D | `metrics_conn_open/close`, `metrics_bytes(dir, n)`, `metrics_rep`, `metrics_auth_ok/fail`, `metrics_get` |
-| `src/server/accesslog.h` | C | B, D | `accesslog_write(user, client, atyp, dest, dest_port, dest_ip, rep)`: `dest` es lo pedido (texto) y `dest_ip` la IP a la que conectó B (o `NULL`). `main` hace el flush. Ver `docs/decisiones-parte-c.md` (D1, D2) |
+| `src/server/accesslog.h` | C | A, B, D | `accesslog_write(user, client, atyp, dest, dest_port, dest_ip, rep)` (B): `dest` es lo pedido (texto) y `dest_ip` la IP a la que conectó B (o `NULL`). `accesslog_auth_fail(client, user, ulen)` (A) al rechazar credenciales. `main` hace el flush. Ver `docs/decisiones-parte-c.md` (D1, D2, D3) |
 | `src/server/config.h` | C | todos | `config_get`, `config_set_*` (buffer size, timeouts, sniffer on/off, log level) |
 | `src/socks5/pop3_sniffer.h` | C | B | **[Entrega 2]** stub con la API definitiva: `pop3_sniffer_applies`, `pop3_sniffer_init`, `pop3_sniffer_feed(sniffer, ptr, n, dir)`. No se usa en la Entrega 1 |
 | `src/mgmt/mgmt.h` | D | `main.c` | `mgmt_passive_accept`, `mgmt_pool_destroy` |
@@ -84,7 +84,8 @@ cada PR lo revisa otro integrante.
 2. Parser incremental **hello** (usando `src/lib/parser.h` o a mano): acepta `0x02`;
    si no viene, responde `0x05 0xFF` y cierra.
 3. Parser incremental **auth RFC 1929** + respuesta `0x01 0x00` / `0x01 0x01`. Valida con
-   `users_check`, cuenta fallos con `metrics_auth_fail`.
+   `users_check`; si las rechaza, cuenta el fallo con `metrics_auth_fail` y lo registra con
+   `accesslog_auth_fail(client, user, ulen)` (decisión D3); si las acepta, `metrics_auth_ok`.
 4. Parser incremental **request**: `CONNECT` con ATYP IPv4, IPv6 y FQDN. `REP 0x07` para
    BIND/UDP, `REP 0x08` para ATYP desconocido.
 5. `REQUEST_WRITE`: arma la respuesta con `BND.ADDR`/`BND.PORT` (`getsockname` del fd que

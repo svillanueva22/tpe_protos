@@ -55,15 +55,22 @@ accesslog_close(void) {
     owns_file = false;
 }
 
-// Copia `src` a `dst` reemplazando espacios y caracteres de control por '_'.
+// Copia hasta `srclen` bytes de `src` a `dst` (truncando a dstlen - 1) reemplazando
+// espacios, '\0' y demás caracteres de control por '_'. Deja siempre un '\0' final.
 static void
-sanitize(char *dst, const size_t dstlen, const char *src) {
+sanitize_n(char *dst, const size_t dstlen, const char *src, const size_t srclen) {
     size_t i = 0;
-    for (; src != NULL && src[i] != '\0' && i + 1 < dstlen; i++) {
+    for (; src != NULL && i < srclen && i + 1 < dstlen; i++) {
         const unsigned char c = (unsigned char) src[i];
         dst[i] = (c <= 0x20 || c == 0x7f) ? '_' : (char) c;
     }
     dst[i] = '\0';
+}
+
+// Igual, para un string terminado en '\0' (o NULL).
+static void
+sanitize(char *dst, const size_t dstlen, const char *src) {
+    sanitize_n(dst, dstlen, src, src == NULL ? 0 : strlen(src));
 }
 
 static const char *
@@ -74,6 +81,16 @@ atyp_name(const enum accesslog_atyp atyp) {
         case ACCESSLOG_IPV6: return "ipv6";
     }
     return "unknown";
+}
+
+// ISO-8601 en UTC: 2026-11-26T22:42:31Z
+static void
+format_when(char *dst, const size_t dstlen) {
+    const time_t now = time(NULL);
+    struct tm tm;
+    if (gmtime_r(&now, &tm) == NULL || strftime(dst, dstlen, "%Y-%m-%dT%H:%M:%SZ", &tm) == 0) {
+        snprintf(dst, dstlen, "-");
+    }
 }
 
 // "host:puerto"; una IPv6 va entre corchetes ("[::1]:5000") para que no se confunda con el puerto.
@@ -125,11 +142,7 @@ accesslog_write(const char *user, const struct sockaddr *client,
     }
 
     char when[32];
-    const time_t now = time(NULL);
-    struct tm tm;
-    if (gmtime_r(&now, &tm) == NULL || strftime(when, sizeof(when), "%Y-%m-%dT%H:%M:%SZ", &tm) == 0) {
-        snprintf(when, sizeof(when), "-");
-    }
+    format_when(when, sizeof(when));
 
     char who[USER_BUF];
     sanitize(who, sizeof(who), user);
@@ -153,6 +166,29 @@ accesslog_write(const char *user, const struct sockaddr *client,
 
     // Sin fflush acá: la línea queda en el buffer hasta accesslog_flush() (una vez por
     // vuelta del selector) o hasta que el buffer se llene. Así no hay un write() por request.
-    fprintf(out, "%s user=%s client=%s atyp=%s dest=%s ip=%s rep=0x%02x\n",
+    fprintf(out, "%s event=request user=%s client=%s atyp=%s dest=%s ip=%s rep=0x%02x\n",
             when, who, cli, atyp_name(atyp), dst, ip, (unsigned) rep);
+}
+
+void
+accesslog_auth_fail(const struct sockaddr *client, const char *user, const size_t ulen) {
+    if (out == NULL) {
+        return;
+    }
+
+    char when[32];
+    format_when(when, sizeof(when));
+
+    // El usuario lo manda un cliente sin autenticar: se trunca a USER_BUF y se limpia.
+    // La contraseña NO se recibe ni se loguea.
+    char who[USER_BUF];
+    sanitize_n(who, sizeof(who), user, ulen);
+    if (who[0] == '\0') {
+        snprintf(who, sizeof(who), "-");
+    }
+
+    char cli[ADDR_BUF];
+    format_client(cli, sizeof(cli), client);
+
+    fprintf(out, "%s event=auth_fail user=%s client=%s\n", when, who, cli);
 }
