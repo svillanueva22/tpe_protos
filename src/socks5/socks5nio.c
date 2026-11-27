@@ -366,9 +366,13 @@ socks5_new(const int client_fd) {
     return ret;
 }
 
-/** descuenta una referencia; con la última, la devuelve al pool o la libera */
-static void
-socks5_destroy(struct socks5 *s) {
+void
+socks5_ref(struct socks5 *s) {
+    s->references++;
+}
+
+void
+socks5_unref(struct socks5 *s) {
     if(s == NULL) {
         return;
     }
@@ -453,7 +457,7 @@ socksv5_passive_accept(struct selector_key *key) {
     return;
 fail:
     close(client);
-    socks5_destroy(state);
+    socks5_unref(state);
 }
 
 static void
@@ -503,7 +507,7 @@ socksv5_close(struct selector_key *key) {
     if(s->references == 1) {
         stm_handler_close(&s->stm, key);
     }
-    socks5_destroy(s);
+    socks5_unref(s);
 }
 
 static void
