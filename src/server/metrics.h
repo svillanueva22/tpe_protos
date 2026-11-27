@@ -2,6 +2,7 @@
 #define METRICS_H_b7HsN2qLc9XvT4mWkR1pZy6e
 
 #include <stdint.h>
+#include <stddef.h>
 
 // TODO Parte C: stub provisorio de la Parte A, reemplazar por la API definitiva.
 
