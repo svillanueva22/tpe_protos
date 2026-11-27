@@ -12,6 +12,9 @@
 #include <sys/socket.h>
 
 #include "socks5nio.h"
+#include "resolv.h"
+#include "connecting.h"
+#include "copy.h"
 #include "users.h"
 #include "metrics.h"
 #include "accesslog.h"
@@ -205,10 +208,13 @@ request_read_init(const unsigned state, struct selector_key *key) {
     request_parser_init(&d->parser);
 }
 
-// TODO Parte B: pasar a REQUEST_RESOLV (FQDN) o a REQUEST_CONNECTING (IP literal).
 static unsigned
 request_connect(struct selector_key *key) {
-    return socksv5_request_reply(key, SOCKS_REPLY_GENERAL_FAILURE);
+    struct socks5 *s = ATTACHMENT(key);
+    if(s->request.atyp == SOCKS_ATYP_DOMAIN) {
+        return resolv_init(key);
+    }
+    return connecting_start(key);
 }
 
 static unsigned
@@ -306,17 +312,19 @@ static const struct state_definition client_statbl[] = {
         .on_arrival       = request_read_init,
         .on_read_ready    = request_read,
     }, {
-        // TODO Parte B
         .state            = REQUEST_RESOLV,
+        .on_block_ready   = resolv_block_ready,
     }, {
-        // TODO Parte B
         .state            = REQUEST_CONNECTING,
+        .on_write_ready   = connecting_write_ready,
     }, {
         .state            = REQUEST_WRITE,
         .on_write_ready   = request_write,
     }, {
-        // TODO Parte B
         .state            = COPY,
+        .on_arrival       = copy_arrival,
+        .on_read_ready    = copy_read_ready,
+        .on_write_ready   = copy_write_ready,
     }, {
         .state            = SOCKS_DONE,
     }, {
@@ -366,9 +374,13 @@ socks5_new(const int client_fd) {
     return ret;
 }
 
-/** descuenta una referencia; con la última, la devuelve al pool o la libera */
-static void
-socks5_destroy(struct socks5 *s) {
+void
+socks5_ref(struct socks5 *s) {
+    s->references++;
+}
+
+void
+socks5_unref(struct socks5 *s) {
     if(s == NULL) {
         return;
     }
@@ -453,7 +465,7 @@ socksv5_passive_accept(struct selector_key *key) {
     return;
 fail:
     close(client);
-    socks5_destroy(state);
+    socks5_unref(state);
 }
 
 static void
@@ -503,7 +515,7 @@ socksv5_close(struct selector_key *key) {
     if(s->references == 1) {
         stm_handler_close(&s->stm, key);
     }
-    socks5_destroy(s);
+    socks5_unref(s);
 }
 
 static void

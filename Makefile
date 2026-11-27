@@ -29,10 +29,13 @@ SERVER_SRCS = \
     src/server/accesslog.c
 
 SOCKS5_SRCS = \
-    src/socks5/socks5nio.c \
-    src/socks5/hello.c     \
-    src/socks5/auth.c      \
-    src/socks5/request.c
+    src/socks5/socks5nio.c   \
+    src/socks5/hello.c       \
+    src/socks5/auth.c        \
+    src/socks5/request.c     \
+    src/socks5/resolv.c      \
+    src/socks5/connecting.c  \
+    src/socks5/copy.c
 
 UTILS_SRCS = \
     src/utils/logger.c \

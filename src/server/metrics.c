@@ -18,3 +18,9 @@ metrics_rep(uint8_t rep) {
 void
 metrics_auth_fail(void) {
 }
+
+void
+metrics_bytes(metrics_direction dir, size_t n) {
+    (void) dir;
+    (void) n;
+}

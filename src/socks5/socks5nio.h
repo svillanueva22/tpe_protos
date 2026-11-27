@@ -129,6 +129,9 @@ socksv5_passive_accept(struct selector_key *key);
 void
 socksv5_pool_destroy(void);
 
+void socks5_ref(struct socks5 *s);
+void socks5_unref(struct socks5 *s);
+
 /** handler a usar al registrar origin_fd en el selector */
 const struct fd_handler *
 socksv5_handler(void);
